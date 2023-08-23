@@ -1,0 +1,2293 @@
+---
+title: "FMR and SAFMR Preliminary Report"
+author: "Matt Alvarez-Nissen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Packages: 
+library(tidyverse)
+library(readxl)
+library(tigris)
+library(sf)
+library(leaflet)
+options(tigris_use_cache = TRUE)
+sf_use_s2(FALSE)
+
+# Directories: 
+homedir <- here::here()
+workdir <- "/Data/"
+setwd(homedir)
+
+# Import data: 
+fmr_historic_df <-
+  read_csv(paste0(homedir, workdir, "FMR_All_1983_2023_rev.csv"))
+
+safmr12_df <- read_xls(paste0(homedir, workdir, "small_area_fmrs_fy2012.xls"))
+safmr13_df <- read_xls(paste0(homedir, workdir, "small_area_fmrs_fy2013.xls"))
+safmr14_df <- read_xls(paste0(homedir, workdir, "small_area_fmrs_fy2014.xls"))
+safmr15_df <- read_xls(paste0(homedir, workdir, "small_area_fmrs_fy2015f.xls"))
+safmr16_df <- 
+  read_xlsx(paste0(homedir, workdir, "final_fy2016_hypothetical_safmrs.xlsx"))
+safmr17_df <- 
+  read_xlsx(paste0(homedir, workdir, "FY2017_hypothetical_safmrs.xlsx"))
+safmr18_df <- 
+  read_xlsx(
+    paste0(homedir, workdir, "fy2018_advisory_safmrs_revised_feb_2018.xlsx")
+  )
+safmr19_df <- read_xlsx(paste0(homedir, workdir, "fy2019_safmrs_rev.xlsx"))
+safmr20_df <- read_xlsx(paste0(homedir, workdir, "fy2020_safmrs_rev.xlsx"))
+safmr21_df <- read_xlsx(paste0(homedir, workdir, "fy2021_safmrs_revised.xlsx"))
+safmr22_df <- read_xlsx(paste0(homedir, workdir, "fy2022_safmrs_revised.xlsx"))
+safmr23_df <- read_xlsx(paste0(homedir, workdir, "fy2023_safmrs_revised.xlsx"))
+
+costar_zip_rent22 <- 
+  read_csv(
+    paste0(homedir, workdir, "CoStar_AllZipcodes_AskingRentbyBedroom_111822.csv")
+  )
+costar_county_rent22 <- 
+  read_csv(
+    paste0(homedir, workdir, "CoStar_AllCounties_AskingRentbyBedroom_103122.csv")
+  )
+
+zori_zip23 <- read_csv(paste0(homedir, workdir, "Zip_zori_sm_month.csv"))
+zori_county23 <- read_csv(paste0(homedir, workdir, "County_zori_sm_month.csv"))
+
+cbsa_xwalk <- read_csv(paste0(homedir, workdir, "cbsa2fipsxw.csv"))
+
+hud_usps_xwalk <- read_xlsx(paste0(homedir, workdir, "ZIP_COUNTY_032023.xlsx"))
+
+cpi_housing <- read_csv(paste0(homedir, workdir, "CPIHOSNS.csv"))
+
+tcac_regions <- read_xlsx(paste0(homedir, workdir, "final_2023_public.xlsx"))
+
+hcv_success_rates <- 
+  read_xlsx(
+    paste0(
+      homedir, workdir, "Voucher_success-rates-by-pha-public-release.xlsx"
+    ),
+    sheet = 2,
+    skip = 1
+  )
+
+safmr_dashboard <-
+  read_xlsx(
+    paste0(homedir, workdir, "Summary of Small Area FMR Data 230810.xlsx")
+  ) %>% 
+  rename_with(~str_replace_all(., " ", "_") %>% str_to_lower())
+
+pha_list <- 
+  read_csv(paste0(homedir, workdir, "Public_Housing_Authorities.csv")) %>% 
+  filter(STATE2KX == "06") %>% 
+  rename(pha_code = PARTICIPANT_CODE) %>% 
+  rename_with(~str_to_lower(.)) %>% 
+  select(pha_code, everything())
+
+fresno_pha_safmr <-
+  read_xlsx(
+    paste0(homedir, workdir, "Fresno-SAFMR-Flyer-3.23.2023.xlsx"),
+    sheet = 2
+  )
+
+hacla_pha_safmr <-
+  read_xlsx(
+    paste0(homedir, workdir, "HACLA_payment_standards_2023.xlsx")
+  )
+
+pha_service_area <-
+  read_sf(
+    paste0(
+      homedir, workdir,
+      "Estimated_Housing_Authority_Service_Areas/Estimated_Housing_Authority_", 
+      "Service_Areas.shp"
+    )
+  )
+```
+
+# Key Findings
+
+1.  HUD introduced private market data to FMR/SAFMR calculations for FY 2023, and are proposing to maintain this new methodology going forward. These changes do not appear to significantly alter the trajectory of California's estimates at either the metro or local (ZIP Code) scale.
+
+2.  While California's rent estimates have been consistently greater than other areas of the country, there are some signs rental cost estimates are plateauing or declining in certain areas of the state (especially during the COVID-19 pandemic).
+
+    -   Historically expensive Bay Area metros and ZIP Codes have particularly seen declining FMRs/SAFMRs since the onset of the pandemic in 2020.
+
+3.  Ten percent of PHAs in California are mandated to use SAFMR rent standards, covering about 12 percent of allocated HCV units. The percentage of allocated HCV units covered by SAFMRs is likely higher due to opt-in PHAs.
+
+4.  Provisions in AB 653 to expand mandatory SAFMR use for underperforming PHAs would likely increase the number of available affordable units in high-rent ZIP Codes while modestly decreasing the overall number of available affordable units (although individual PHAs may experience a net increase in available affordable units). The evidence on the impact of increased available affordable units on voucher success rates is mixed, with some PHAs reporting that other policies are generally more impactful. Grant funds provided by AB 653 to PHAs would also provide a range of additional supports, thereby potentially increasing voucher success rates as the bill intends.
+
+# Description
+
+This report provides preliminary analysis on HUD's Fair Market Rent (FMR) and Small Area Fair Market Rent (SAFMR), with a focus on changes in California specifically. It also includes an assessment of expanding mandatory SAFMRs. Analysis starts in 2012 (the first time HUD used the 5-year ACS in determining FMRs), and ends in 2023.
+
+## Inputs
+
+-   Historic and current FMR data
+-   Historic and current SAFMR data
+-   CoStar zipcode rents (historic)
+-   Zillow ZORI (historic)
+-   2018 Furman Center SAFMR/FMR Change Methodology
+-   2023 HUD PHA Success Rate Study Results
+-   HUD PHA data
+-   Local PHA data
+
+## Outputs
+
+-   Preliminary charts/figures
+-   Preliminary interactive map
+
+## Notes
+
+-   Dollar amounts inflated to 2023 \$ are inflated using the Consumer Price Index for All Urban Consumers: Housing in U.S. City Average for the month of January each year as provided by the St. Louis Fed (FRED).
+-   Rental cost comparison is conducted across 2-bedroom units, where available. Note that Zillow ZORI estimates are not available by bedroom size, and sample the entire rental housing market. CoStar 2-bedroom average rents are derived from the Partnership's annual pull of rental cost data in September, and Zillow's ZORI estimates are limited to estimates provided in September of a given year.
+
+```{r}
+# Set up CPI data
+cpi_housing_clean <-
+  cpi_housing %>% 
+  filter(str_detect(DATE, "01-01$")) %>% 
+  transmute(
+    year = str_extract(DATE, "\\d{4}") %>% as.double(),
+    cpi = CPIHOSNS
+  )
+
+cpi23 <- cpi_housing_clean %>% filter(year == 2023) %>% select(cpi) %>% pull()
+```
+
+```{r}
+tcac_regions <-
+  tcac_regions %>% 
+  select(county = County, region = Region) %>% 
+  distinct() %>% 
+  mutate(county = paste0(county, " County"))
+```
+
+```{r}
+zcta_sf <- zctas(year = 2022) %>% select(zcta = GEOID20)
+region_sf <- 
+  counties(state = "CA") %>% 
+  select(county_code = GEOID, NAME) %>% 
+  mutate(
+    region =
+      case_when(
+        NAME == "Los Angeles" ~ "Los Angeles Region",
+        NAME %in% c("Alameda", "Contra Costa", "Solano", "Napa", "Sonoma", 
+                    "Marin", "San Francisco", "San Mateo", "Santa Clara") ~ 
+          "Bay Area Region",
+        NAME %in% c("San Joaquin", "Stanislaus", "Merced", "Madera", "Fresno",
+                    "Kings", "Tulare", "Kern") ~ "Central Valley Region",
+        NAME == "San Diego" ~ "San Diego",
+        NAME %in% c("Sacramento", "Yolo", "El Dorado", "Placer") ~ 
+          "Capital Region",
+        NAME %in% c("San Bernardino", "Imperial", "Riverside") ~ 
+          "Inland Empire Region",
+        NAME == "Orange" ~ "Orange County Region",
+        NAME %in% c("Santa Cruz", "Monterey", "San Luis Obispo", 
+                    "Santa Barbara", "Ventura") ~ "Central Coast Region",
+        TRUE ~ "Rural Areas"
+      )
+  ) %>% 
+  group_by(region) %>% 
+  mutate(geometry = st_union(geometry))
+```
+
+```{r}
+zcta_intersect_pct <- 
+  zcta_sf %>% 
+  st_transform(crs = st_crs(region_sf)) %>% 
+  st_intersection(region_sf) %>% 
+  mutate(intersect_area = st_area(.)) %>%    
+  st_drop_geometry() %>% 
+  select(zcta, region, intersect_area)
+
+zcta_coverage <-
+  zcta_sf %>% 
+  st_transform(crs = st_crs(region_sf)) %>% 
+  # Find the total area of each ZCTA
+  mutate(zcta_area = st_area(.)) %>% 
+  left_join(zcta_intersect_pct) %>% 
+  mutate(coverage = as.double(intersect_area)/as.double(zcta_area)) %>% 
+  group_by(zcta) %>% 
+  filter(coverage == max(coverage) | is.na(coverage)) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(zcta, region)
+rm(zcta_sf, zcta_intersect_pct)
+```
+
+# FMR Comparison
+
+## California Compared to Other States
+
+```{r}
+# Set up FMR data for analysis
+fmr_ca_df <-
+  fmr_historic_df %>% 
+  select(fips2010, state, areaname23, name, msa23, starts_with("fmr")) %>% 
+  select(-fmr_area) %>% 
+  pivot_longer(cols = 6:ncol(.), names_to = "year", values_to = "fmr") %>% 
+  mutate(
+    state = if_else(state != "6" | is.na(state), "Not California", "California"),
+    nbeds = str_remove(year, "^fmr\\d{2}_"),
+    nbeds = if_else(nbeds == "0", "Studio", nbeds),
+    year = 
+      str_remove(year, "^fmr") %>% 
+      str_remove("_\\d$") %>% 
+      str_replace("^2", "202") %>% 
+      str_replace("^1", "201") %>% 
+      str_replace("^0", "200") %>% 
+      as.double()
+  ) %>% 
+  filter(!str_detect(nbeds, "fmr")) %>% 
+  filter(year >= 2012 & year <= 2023) %>% 
+  # inflate to 2023 $ w/ CPI
+  left_join(cpi_housing_clean) %>% 
+  mutate(fmr_real23 = fmr * (cpi23 / cpi))
+```
+
+Nominal FMRs have increased between 2012 and 2023 both in California and other states/regions. Nominal FMRs have generally increased since the onset of the COVID-19 pandemic in 2020. California's nominal FMRs are historically higher than nominal FMRs in other states/regions, with the gap continually increasing.
+
+```{r}
+fmr_ca_df %>% 
+  filter(nbeds == "2") %>% 
+  select(state, areaname23, year, fmr) %>% 
+  distinct() %>% 
+  ggplot(aes(x = year, y = fmr, color = state)) +
+  geom_smooth() +
+  #geom_boxplot() +
+  geom_text(
+    data = . %>% group_by(year) %>% filter(fmr == max(fmr) & year == 2022),
+    aes(x = 2021, y = 1000, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 2022.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  theme_bw() +
+  labs(
+    title = "Historic Trends in HUD's Fair Market Rents",
+    subtitle = "2-bedroom units",
+    x = NULL,
+    y = "Median FMR (nominal)",
+    color = NULL
+  )
+```
+
+When adjusting for inflation, non-California real FMRs have remained stable since 2012 while California real FMRs have continued to increase. The new methodology changes do not seem to have influenced this trend.
+
+```{r}
+fmr_ca_df %>% 
+  filter(nbeds == "2") %>% 
+  select(state, areaname23, year, fmr_real23) %>% 
+  distinct() %>% 
+  ggplot(aes(x = year, y = fmr_real23, color = state)) +
+  geom_smooth() +
+  #geom_boxplot() +
+  geom_text(
+    data = 
+      . %>% 
+      group_by(year) %>% filter(fmr_real23 == max(fmr_real23) & year == 2022),
+    aes(x = 2021, y = 1250, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 2022.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  theme_bw() +
+  labs(
+    title = "Historic Trends in HUD's Fair Market Rents",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "Median FMR (real)",
+    color = NULL
+  )
+```
+
+As shown below, the median percent year-over-year (YOY) change in real FMRs varies significantly every year. California saw a steady positive YOY change from 2018 to 2021, with a significant drop in 2022 (and less significant decline in 2023). Non-California regions experienced nearly the inverse during this time period.
+
+```{r}
+state_fmr_yoy <-
+  fmr_ca_df %>% 
+  filter(nbeds == "2") %>%
+  #filter(year %in% c(2022, 2023)) %>% 
+  group_by(fips2010) %>% 
+  mutate(prev_fmrreal = lead(fmr_real23)) %>%
+  filter(!is.na(prev_fmrreal)) %>% 
+  mutate(yoy_pct = (fmr_real23 - prev_fmrreal) / prev_fmrreal) %>% 
+  select(state, year, fmr_real23, yoy_pct, prev_fmrreal) %>% 
+  distinct() %>% 
+  group_by(state, year) %>% 
+  summarise(yoy_pct = median(yoy_pct)) %>% 
+  ungroup() %>% 
+  mutate(year = paste0(year - 1, "-", year)) 
+```
+
+```{r}
+state_fmr_yoy %>% 
+  ggplot(aes(x = as.factor(year), y = yoy_pct, fill = state)) +
+  geom_col(position = position_dodge()) +
+  geom_text(
+    aes(
+      label = scales::percent(yoy_pct, accuracy = .1), 
+      vjust = 0.5 - sign(yoy_pct)/2
+    ),
+    position = position_dodge(width = .9)
+  ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 9, y = yoy_pct + .05, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 10.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  labs(
+    title = "Median % YOY Change in FMR",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "% YOY Change (Real $)",
+    fill = NULL
+  )
+```
+
+## California Metro Comparison
+
+Within California, different metro areas have experienced varying degrees of change in their real FMRs over time. The charts below show the most expensive real FMRs in each TCAC/HCD Opportunity Map region.
+
+```{r}
+# top 8 most expensive in 2023 (CA)
+top8_fmr <-
+  fmr_ca_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  filter(year == 2023) %>% 
+  left_join(tcac_regions, by = c("name" = "county")) %>% 
+  group_by(region) %>% 
+  arrange(desc(fmr_real23)) %>% 
+  select(areaname23, region, fmr_real23) %>% 
+  distinct() %>% 
+  slice(1) %>% 
+  filter(region != "Rural Areas") %>% 
+  mutate(fullname = paste0(areaname23, " (", region, ")"))
+```
+
+The San Francisco metro area's real FMR has consistently outpaced all other metros across the state since 2012, but was slightly surpassed by the Santa Cruz-Watsonville metro in 2023 - see below. The most expensive metros by region have generally seen an increase in their real FMRs since 2018, although there have been some decreases since the onset of the pandemic in 2020 (especially in the San Francisco and Santa Cruz-Watsonville metros).
+
+```{r}
+state_fmr_trends <-
+  fmr_ca_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  select(year, areaname23, fmr_real23) %>% 
+  distinct() %>% 
+  group_by(year) %>% 
+  summarise(fmr_real23 = median(fmr_real23)) %>% 
+  ungroup() %>% 
+  mutate(
+    areaname23 = "California", region = "California", fullname = "California"
+  )
+```
+
+```{r}
+fmr_ca_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  select(year, areaname23, fmr_real23) %>% 
+  distinct() %>% 
+  filter(areaname23 %in% top8_fmr$areaname23) %>% 
+  left_join(top8_fmr) %>% 
+  group_by(areaname23) %>% 
+  fill(region, fullname, .direction = "down") %>% 
+  bind_rows(state_fmr_trends) %>% 
+  arrange(areaname23, desc(year)) %>% 
+  distinct() %>%
+  ungroup() %>% 
+  ggplot(
+    aes(
+      x = as.factor(year), y = fmr_real23, group = fullname,
+      color = 
+        fct_reorder2(str_wrap(fullname, 25), year, fmr_real23) 
+    )
+  ) +
+  #geom_boxplot(outlier.shape = NA) +
+  geom_line() +
+  geom_point() +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 11, y = 3000, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 11.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(legend.text = element_text(size = 8)) +
+  labs(
+    title = "Historic Trends in HUD's Fair Market Rents, California",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "Median FMR (real)",
+    color = "Most Expensive Metro Areas\nin Each TCAC/HCD Region"
+  )
+```
+
+YOY changes fluctuate significantly across California's metro areas, see below (truncated to 2018-2023). For example, the San Francisco metro area saw a decrease in its real FMR between both 2021-2022 and 2022-2023, while other metros may have experienced a decrease during the first period but an increase during the second. The introduction of the new methodology does not appear to have any obvious impact on the pattern of YOY change.
+
+```{r, fig.height=6}
+fmr_ca_df %>% 
+  filter(nbeds == "2") %>%
+  group_by(fips2010) %>% 
+  mutate(prev_fmrreal = lead(fmr_real23)) %>%
+  filter(!is.na(prev_fmrreal)) %>% 
+  mutate(yoy_pct = (fmr_real23 - prev_fmrreal) / prev_fmrreal) %>% 
+  filter(state == "California") %>% 
+  select(areaname23, year, fmr_real23, yoy_pct, prev_fmrreal) %>% 
+  distinct() %>% 
+  group_by(areaname23, year) %>% 
+  summarise(yoy_pct = median(yoy_pct)) %>% 
+  ungroup() %>% 
+  mutate(year = paste0(year - 1, "-", year)) %>% 
+  filter(areaname23 %in% top8_fmr$areaname23) %>% 
+  left_join(top8_fmr) %>% 
+  bind_rows(
+    state_fmr_yoy %>% 
+      filter(state == "California") %>% 
+      rename(fullname = state)
+  ) %>%  
+  ggplot(
+    aes(
+      x = as.factor(year), y = yoy_pct, 
+      fill = fct_relevel(fullname, top8_fmr$fullname, "California")
+    )
+  ) +
+  geom_col(position = position_dodge()) +
+  geom_text(
+    aes(
+      label = scales::percent(yoy_pct, accuracy = .1),
+      vjust = 0.5 - sign(yoy_pct)/2
+    ),
+    position = position_dodge(width = .9),
+    size = 2
+  ) +
+  # ggrepel::geom_text_repel(
+  #   aes(
+  #     label = scales::percent(yoy_pct, accuracy = .1),
+  #     vjust = 0.5 - sign(yoy_pct)/2
+  #   ),
+  #   position = position_dodge(width = .9),
+  #   direction = "y",
+  #   size = 3
+  # ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = "2021-2022", y = yoy_pct + .3, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 3.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_discrete(
+    limits = c("2018-2019", "2019-2020", "2021-2022", "2022-2023")
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = "Set1", labels = ~ str_wrap(.x, width = 28)) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom", 
+    legend.justification = c(0,0), 
+    legend.text = element_text(size = 6)
+  ) +
+  guides(fill = guide_legend(nrow = 3, byrow = TRUE)) +
+  labs(
+    title = "% YOY Change in FMR",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "% YOY Change (Real $)",
+    fill = "Most Expensive Metro Areas\nin Each TCAC/HCD Region"
+  )
+```
+
+## Comparison of Private Sources to California's FMRs
+
+```{r}
+cbsa_xwalk_clean <-
+  cbsa_xwalk %>% 
+  filter(fipsstatecode == "06") %>% 
+  select(cbsacode, cbsatitle, county = countycountyequivalent) %>% 
+  mutate(county = str_remove(county, " County"))
+```
+
+```{r}
+costar_county_rent22 <-
+  costar_county_rent22 %>% 
+  filter(period_type == "Annual") %>% 
+  group_by(county, period) %>% 
+  summarise(costar_avg_rent = mean(two_bdr, na.rm = TRUE)) %>% 
+  rename(year = period) %>% 
+  filter(!county %in% c("Alpine", "Amador", "Calaveras", "Inyo", "Mariposa",
+                        "Mono", "Tuolumne", "Colusa", "Glenn", "Tehama", 
+                        "Trinity", "Del Norte", "Lassen", "Modoc", "Plumas",
+                        "Siskiyou", "Nevada", "Sierra")
+         ) %>% 
+  mutate(
+    year = str_remove(year, " \\w+") %>% as.double(),
+    county = str_replace(county, "SLO", "San Luis Obispo"),
+    joincounty = 
+      if_else(str_detect(county, "\\,"), str_extract(county, "^\\w+"), county)
+  ) %>% 
+  left_join(cbsa_xwalk_clean)
+```
+
+```{r}
+zori_county23 <-
+  zori_county23 %>% 
+  filter(StateCodeFIPS == "06") %>% 
+  select(county = RegionName, contains("-09-")) %>% 
+  pivot_longer(cols = 2:ncol(.), names_to = "year", values_to = "zori") %>% 
+  mutate(
+    county = str_remove(county, " County$"),
+    year = str_extract(year, "^\\d{4}") %>% as.double()
+  )
+```
+
+```{r}
+fmr_join <-
+  fmr_ca_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  mutate(name = str_remove(name, " County")) %>% 
+  left_join(costar_county_rent22, by = c("name" = "joincounty", "year")) %>% 
+  mutate(costar_avg_rent_real = costar_avg_rent * (cpi23 / cpi)) %>% 
+  left_join(zori_county23, by = c("name" = "county", "year")) %>% 
+  mutate(zori_real = zori * (cpi23 / cpi)) %>% 
+  select(
+    year, areaname23, county, fmr_real23, costar_avg_rent_real, zori_real
+  ) %>% 
+  distinct() %>% 
+  group_by(year, areaname23) %>% 
+  summarise(
+    fmr_real23 = mean(fmr_real23, na.rm = TRUE),
+    costar_avg_rent_real = mean(costar_avg_rent_real, na.rm = TRUE),
+    zori_real = mean(zori_real, na.rm = TRUE)
+  ) %>% 
+  pivot_longer(
+    cols = fmr_real23:ncol(.), names_to = "rent_type", values_to = "rent_value"
+  )
+```
+
+Compared to Zillow and CoStar rent estimates aggregated at the metro level, HUD FMRs tend to underestimate a home's rent. Note that while Zillow's index includes rental units of all bedroom sizes, CoStar estimates and HUD's real FMR in the chart below are limited to 2-bedroom units. Zillow also has more expansive data on rental properties with less than 5 units than CoStar, and may be more representative of rental costs experienced by new movers. CoStar and Zillow estimates are also adjusted for inflation.
+
+The new methodology appears to have minimal impact on the trajectory of FMRs.
+
+```{r}
+fmr_join %>% 
+  mutate(
+    rent_type = 
+      fct_relevel(rent_type, "zori_real", "costar_avg_rent_real", "fmr_real23")
+  ) %>% 
+  ggplot(aes(x = as.factor(year), y = rent_value, fill = rent_type)) +
+  geom_boxplot(alpha = .4, outlier.shape = NA) +
+  geom_line(
+    data = 
+      fmr_join %>% 
+      group_by(year, rent_type) %>% 
+      summarise(rent_value = median(rent_value, na.rm = TRUE)) %>% 
+      ungroup() %>% 
+      mutate(
+        rent_type = 
+          fct_relevel(rent_type, "zori_real", "costar_avg_rent_real",
+                      "fmr_real23")
+        ),
+    aes(group = rent_type, color = rent_type),
+    size = 1.1, 
+    linetype = "dashed"
+  ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 9, y = 4000, label = "New Methodology"),
+    color = "red"
+  ) +
+  geom_vline(aes(xintercept = 11.5), color = "red", linetype = "dotted") +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_fill_discrete(
+    labels = c("Zillow ZORI", "CoStar Average Rent", "HUD FMR")
+  ) +
+  scale_color_discrete(
+    labels = c("Zillow ZORI", "CoStar Average Rent", "HUD FMR")
+  ) +
+  theme_bw() +
+  theme(legend.text = element_text(size = 8)) +
+  labs(
+    title = "Historic Trends in California Regional Rents",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    fill = "Rent Estimate Type",
+    color = "Rent Estimate Type",
+    x = NULL,
+    y = "Estimated Rent (real)"  
+  )
+```
+
+```{r}
+fmr_join %>% 
+  pivot_wider(names_from = rent_type, values_from = rent_value) %>% 
+  mutate(
+    costardiff = costar_avg_rent_real - fmr_real23,
+    zoridiff = zori_real - fmr_real23
+  ) %>% 
+  select(year, areaname23, costardiff, zoridiff) %>% 
+  pivot_longer(
+    cols = costardiff:zoridiff, names_to = "difftype", values_to = "diffamt"
+  ) %>% 
+  filter(year != 2023) %>% 
+  ggplot(aes(x = as.factor(year), y = diffamt, fill = difftype)) +
+  geom_boxplot(alpha = .4, outlier.shape = NA) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed") +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_fill_discrete(
+    labels = c("CoStar", "Zillow"), 
+    guide = guide_legend(reverse = TRUE)
+  ) +
+  theme_bw() +
+  labs(
+    title = "Annual Difference b/w HUD FMRs and Private Sources",
+    subtitle = "2-bedroom units, 2023 $",
+    x = NULL,
+    y = "Rent Cost Difference (real)",
+    fill = "Private Source"
+  )
+```
+
+# SAFMR Comparison
+
+## California Compared to Other States
+
+```{r}
+safmr_cleaner <- function(df, year) {
+  df %>% 
+  rename_with(~str_replace_all(., " ", "_") %>% str_to_lower()) %>% 
+  select(state, cbsa, cbsa_name, county, zip, starts_with("area_rent")) %>% 
+  mutate(
+    state = 
+      if_else(state == "06" | state == "California", "California", "Not California")
+  ) %>% 
+  pivot_longer(cols = 6:ncol(.), names_to = "nbeds", values_to = "safmr") %>% 
+  mutate(
+    cbsa = as.double(cbsa),
+    nbeds = str_remove(nbeds, "area_rent_br") %>% str_replace("0", "Studio"),
+    nbeds = 
+      str_remove(nbeds, "area_rent_") %>% 
+      str_remove("br$") %>% 
+      str_replace("0", "Studio"),
+    year = year
+  )
+}
+```
+
+```{r}
+safmr15_df <-
+  safmr15_df %>%
+  rename(cbsa = cbsamet, cbsa_name = cbnsmcnm, zip = zipcode) %>%
+  mutate(cbsa = as.double(cbsa))
+
+safmr16_df <-
+  safmr16_df %>% 
+  rename(
+    cbsa = metro_code, cbsa_name = metro_name, state = statename,
+    county = county_name, zip = zip_code
+  ) %>%
+  mutate(cbsa = as.double(cbsa))
+
+safmr17_df <-
+  safmr17_df %>%
+  rename(cbsa = metro_code, cbsa_name = metro_name, zip = zip_code) %>%
+  mutate(
+    cbsa = as.double(cbsa), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  )
+
+safmr18_df <-
+  safmr18_df %>%
+  rename(
+    cbsa = `HUD Area Code`, cbsa_name = `HUD Metro Fair Market Rent Area Name`,
+    zip = `ZIP\nCode`
+  ) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("SAFMR"), ~str_replace(., "SAFMR\n", "area_rent_")
+  )
+
+safmr19_df <-
+  safmr19_df %>%
+  rename(
+    cbsa = `HUD Area Code`, cbsa_name = `HUD Metro Fair Market Rent Area Name`,
+    zip = `ZIP\r\nCode`
+  ) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("SAFMR"), ~str_replace(., "SAFMR\r\n", "area_rent_")
+  )
+
+safmr20_df <-
+  safmr20_df %>%
+  rename(cbsa = CBSASub20, cbsa_name = Areaname20, zip = zcta) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("safmr"), ~str_replace(., "safmr_", "area_rent_")
+  )
+
+safmr21_df <-
+  safmr21_df %>%
+  rename(
+    cbsa = `HUD Area Code`, cbsa_name = `HUD Metro Fair Market Rent Area Name`, 
+    zip = `ZIP\nCode`
+  ) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("SAFMR"), ~str_replace(., "SAFMR\n", "area_rent_")
+  )
+
+safmr22_df <-
+  safmr22_df %>%
+  rename(
+    cbsa = `HUD Area Code`, cbsa_name = `HUD Metro Fair Market Rent Area Name`, 
+    zip = `ZIP\nCode`
+  ) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("SAFMR"), ~str_replace(., "SAFMR\n", "area_rent_")
+  )
+
+safmr23_df <-
+  safmr23_df %>%
+  rename(
+    cbsa = `HUD Area Code`, cbsa_name = `HUD Metro Fair Market Rent Area Name`, 
+    zip = `ZIP\nCode`
+  ) %>% 
+  mutate(
+    cbsa = str_extract(cbsa, "\\d+$"), 
+    state = 
+      if_else(
+        str_detect(cbsa_name, " CA"), "California", "Not California"
+      ), 
+    county = ""
+  ) %>% 
+  select(state, cbsa, cbsa_name, county, zip, ends_with("br")) %>% 
+  rename_with(
+    .cols = contains("SAFMR"), ~str_replace(., "SAFMR\n", "area_rent_")
+  )
+```
+
+```{r}
+safmr_df <-
+  bind_rows(
+    safmr_cleaner(safmr12_df, 2012),
+    safmr_cleaner(safmr13_df, 2013),
+    safmr_cleaner(safmr14_df, 2014),
+    safmr_cleaner(safmr15_df, 2015),
+    safmr_cleaner(safmr16_df, 2016),
+    safmr_cleaner(safmr17_df, 2017),
+    safmr_cleaner(safmr18_df, 2018),
+    safmr_cleaner(safmr19_df, 2019),
+    safmr_cleaner(safmr20_df, 2020),
+    safmr_cleaner(safmr21_df, 2021),
+    safmr_cleaner(safmr22_df, 2022),
+    safmr_cleaner(safmr23_df, 2023)
+  ) %>% 
+  # inflate to 2023 $ w/ CPI
+  left_join(cpi_housing_clean) %>% 
+  mutate(safmr_real23 = safmr * (cpi23 / cpi)) %>% 
+  arrange(zip, desc(year))
+```
+
+```{r}
+rm(safmr12_df, safmr13_df, safmr14_df, safmr15_df, safmr16_df, safmr17_df, 
+   safmr18_df, safmr19_df, safmr20_df, safmr21_df, safmr22_df, safmr23_df)
+```
+
+Like nominal FMRs, nominal SAFMRs have increased between 2012 and 2023 both in California and other states/regions. Nominal SAFMRs have generally increased since the onset of the COVID-19 pandemic in 2020. California's nominal SAFMRs are historically higher than SAFMRs in other states/regions, with the gap continually increasing (especially since 2015/2016).
+
+```{r}
+safmr_df %>% 
+  filter(nbeds == "2") %>% 
+  select(state, zip, year, safmr) %>% 
+  distinct() %>% 
+  group_by(zip, year) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = year, y = safmr, color = state)) +
+  geom_smooth() +
+  geom_text(
+    data = 
+      . %>% 
+      group_by(year) %>% filter(safmr == max(safmr) & year == 2022),
+    aes(x = 2021, y = 1600, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 2022.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  theme_bw() +
+  labs(
+    title = "Historic Trends in HUD's Small Area Fair Market Rents",
+    subtitle = "2-bedroom units",
+    x = NULL,
+    y = "Median SAFMR (nominal)",
+    color = NULL
+  )
+```
+
+When adjusting for inflation, non-California real SAFMRs have somewhat increased since 2012 while California's real SAFMRs experienced a significant increase. However, California's real SAFMRs have decreased since their height during the pandemic between 2020 and 2021. The introduction of the new methodology does not seem to have significantly altered this trend.
+
+```{r}
+safmr_df %>% 
+  filter(nbeds == "2") %>% 
+  select(state, zip, year, safmr_real23) %>% 
+  distinct() %>%
+  group_by(zip, year) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = year, y = safmr_real23, color = state)) +
+  geom_smooth() +
+  geom_text(
+    data = 
+      . %>% 
+      group_by(year) %>%
+      filter(safmr_real23 == max(safmr_real23) & year == 2022),
+    aes(x = 2021, y = 1600, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 2022.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  theme_bw() +
+  labs(
+    title = "Historic Trends in HUD's Small Area Fair Market Rents",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "Median SAFMR (real)",
+    color = NULL
+  )
+```
+
+As shown below, the median percent YOY change in real SAFMRs varies significantly every year. California saw a steady positive YOY change from 2018 to 2021, with a significant drop in 2022 (and small increase in 2023). In 2022, California's real SAFMRs decreased more than non-Californian real SAFMRs and in 2023 they increased at slower rate than non-Californian real SAFMRs. There is no clear relationship between the new methodology and the relative change in real SAFMR value.
+
+```{r}
+safmr_yoy <-
+  safmr_df %>% 
+  filter(nbeds == "2") %>%
+  #filter(year %in% c(2022, 2023)) %>%
+  select(state, year, zip, safmr_real23) %>% 
+  distinct() %>% 
+  group_by(zip, year) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  arrange(zip, desc(year)) %>% 
+  group_by(zip) %>% 
+  mutate(prev_safmrreal = lead(safmr_real23)) %>% 
+  filter(!is.na(prev_safmrreal)) %>% 
+  ungroup() %>% 
+  mutate(yoy_pct = (safmr_real23 - prev_safmrreal) / prev_safmrreal) %>% 
+  group_by(state, year) %>%
+  summarise(yoy_pct = median(yoy_pct)) %>%
+  ungroup() %>%
+  mutate(year = paste0(year - 1, "-", year))
+```
+
+```{r}
+safmr_yoy %>% 
+  ggplot(aes(x = as.factor(year), y = yoy_pct, fill = state)) +
+  geom_col(position = position_dodge()) +
+  geom_text(
+    aes(
+      label = scales::percent(yoy_pct, accuracy = .1),
+      vjust = 0.5 - sign(yoy_pct)/2
+    ),
+    position = position_dodge(width = .9)
+  ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 10, y = yoy_pct + .05, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 10.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(
+    title = "Median % YOY Change in SAFMR",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "% YOY Change (Real $)",
+    fill = NULL
+  )
+```
+
+## California ZIP Code Comparison
+
+```{r}
+hud_usps_xwalk_clean <-
+  hud_usps_xwalk %>% 
+  select(zip = ZIP, county = COUNTY, res_ratio = RES_RATIO)
+```
+
+```{r}
+# top 8 most expensive in 2023 (CA)
+top8_safmr <-
+  safmr_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  filter(year == 2023) %>% 
+  select(-county) %>% 
+  left_join(hud_usps_xwalk_clean %>% rename(fipscountycode = county)) %>% 
+  left_join(
+    cbsa_xwalk %>% 
+      mutate(fipscountycode = paste0(fipsstatecode, fipscountycode)) %>% 
+      select(fipscountycode, county = countycountyequivalent)
+  ) %>% 
+  left_join(tcac_regions, by = "county") %>% 
+  filter(region != "Rural Areas") %>% 
+  arrange(zip) %>% 
+  group_by(zip) %>% 
+  filter(res_ratio == max(res_ratio)) %>% 
+  group_by(region) %>% 
+  arrange(desc(safmr_real23)) %>% 
+  select(zip, region, safmr_real23) %>% 
+  distinct() %>% 
+  slice(1) %>% 
+  mutate(fullname = paste0(zip, " (", region, ")"))
+```
+
+```{r}
+state_safmr_trends <-
+  safmr_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  select(year, zip, safmr_real23) %>% 
+  distinct() %>% 
+  group_by(year) %>% 
+  summarise(safmr_real23 = median(safmr_real23)) %>% 
+  ungroup() %>% 
+  mutate(zip = "California", region = "California", fullname = "California")
+```
+
+Within California, different ZIP Codes have experienced varying degrees of change in their SAFMRs over time. The charts below show the most expensive ZIP Codes by real SAFMR in each TCAC/HCD Opportunity Map region. The most expensive ZIP Codes are all located in the Bay Area (especially in the San Francisco metro area).
+
+Since 2016, the real SAFMR for 94065 ZIP Code in the Bay Area (which is the highest real SAFMR in the state) has consistently outpaced all other real SAFMRs across the state, see below. However, this ZIP Code has seen a marked decline in its real SAFMR since its height during the pandemic in 2021. The most expensive ZIP Codes by region have generally seen an increase in their real SAFMRs since 2012, although there have been some decreases over the course of the pandemic.
+
+```{r}
+safmr_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  select(year, zip, safmr_real23) %>% 
+  distinct() %>% 
+  filter(zip %in% top8_safmr$zip) %>% 
+  left_join(top8_safmr) %>% 
+  group_by(zip) %>% 
+  fill(region, fullname, .direction = "down") %>% 
+  bind_rows(state_safmr_trends) %>% 
+  arrange(zip, desc(year)) %>% 
+  distinct() %>%
+  ungroup() %>%
+  ggplot(
+    aes(
+      x = year, y = safmr_real23, group = fullname,
+      color = 
+        fct_reorder2(str_wrap(fullname, 25), year, safmr_real23) 
+    )
+  ) +
+  geom_line() +
+  geom_point() +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 2020, y = 5000, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 2022.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw() +
+  theme(legend.text = element_text(size = 8)) +
+  labs(
+    title = 
+      "Historic Trends in HUD's Small Area Fair Market Rents, California",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "Median FMR (real)",
+    color = "Most Expensive ZIPs\nin Each TCAC/HCD Region"
+  )
+```
+
+YOY changes fluctuate significantly across California's most expensive ZIP Codes, see below (truncated to 2018-2023). For example, ZIP Code 94065 in the Bay Area saw a decrease in both the 2021-2022 and 2022-2023 periods, while ZIP Code 91709 in the Inland Empire saw a marked increase during both periods. The introduction of the new methodology does not appear to have any obvious impact on the pattern of YOY change.
+
+```{r}
+safmr_df %>% 
+  filter(nbeds == "2") %>%
+  select(year, zip, safmr_real23) %>% 
+  distinct() %>% 
+  group_by(zip, year) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  arrange(zip, desc(year)) %>% 
+  group_by(zip) %>% 
+  mutate(prev_safmrreal = lead(safmr_real23)) %>% 
+  filter(!is.na(prev_safmrreal)) %>% 
+  ungroup() %>% 
+  mutate(yoy_pct = (safmr_real23 - prev_safmrreal) / prev_safmrreal) %>% 
+  mutate(year = paste0(year - 1, "-", year)) %>%
+  filter(zip %in% top8_safmr$zip) %>% 
+  left_join(top8_safmr) %>% 
+  bind_rows(
+    safmr_yoy %>% 
+      filter(state == "California") %>% 
+      rename(fullname = state)
+  ) %>% 
+  group_by(zip) %>% 
+  fill(region, fullname, .direction = "down") %>% 
+  ungroup() %>% 
+  ggplot(
+    aes(
+      x = year, y = yoy_pct, 
+      fill = fct_relevel(fullname, top8_safmr$fullname, "California")
+    )
+  ) +
+  geom_col(position = position_dodge()) +
+  geom_text(
+    aes(
+      label = scales::percent(yoy_pct, accuracy = .1),
+      #y = yoy_pct + sign(yoy_pct)/2,
+      vjust = .5 - sign(yoy_pct)/2
+    ),
+    position = position_dodge(width = .9),
+    size = 2
+  ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = "2021-2022", y = yoy_pct + .2, label = "New\nMethodology"),
+    color = "red"
+  ) +
+  geom_vline(
+    aes(xintercept = 3.5),
+    color = "red",
+    linetype = "dotted"
+  ) +
+  scale_x_discrete(
+    limits = c("2018-2019", "2019-2020", "2021-2022", "2022-2023")
+  ) +
+  scale_y_continuous(
+    limits = c(-.18, .26),
+    labels = scales::percent_format()
+  ) +
+  scale_fill_brewer(palette = "Set1", labels = ~ str_wrap(.x, width = 24)) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom", 
+    legend.justification = c(0,0), 
+    legend.text = element_text(size = 8)
+  ) +
+  guides(fill = guide_legend(ncol = 2, byrow = FALSE)) +
+  labs(
+    title = "% YOY Change in SAFMR",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    x = NULL,
+    y = "% YOY Change (Real $)",
+    fill = "Most Expensive ZIPs\nin Each TCAC/HCD Region"
+  )
+```
+
+## Comparison of Private Sources to California's SAFMRs
+
+```{r}
+costar_zip_rent22 <-
+  costar_zip_rent22 %>% 
+  filter(period_type == "Annual") %>% 
+  #filter(zipcode == 92647)
+  group_by(zipcode, period) %>% 
+  summarise(costar_avg_rent = mean(two_bdr, na.rm = TRUE)) %>% 
+  rename(year = period) %>% 
+  mutate(year = str_remove(year, " \\w+") %>% as.double()) %>% 
+  filter(year <= 2022)
+```
+
+```{r}
+zori_zip23 <-
+  zori_zip23 %>% 
+  select(zip = RegionName, contains("-09-")) %>% 
+  pivot_longer(cols = 2:ncol(.), names_to = "year", values_to = "zori") %>% 
+  mutate(year = str_extract(year, "^\\d{4}") %>% as.double())
+```
+
+```{r}
+safmr_join <-
+  safmr_df %>% 
+  filter(nbeds == "2" & state == "California") %>% 
+  left_join(
+    costar_zip_rent22 %>% mutate(zipcode = as.character(zipcode)),
+    by = c("zip" = "zipcode", "year"),
+  ) %>% 
+  mutate(costar_avg_rent_real = costar_avg_rent * (cpi23 / cpi)) %>% 
+  left_join(
+    zori_zip23 %>% mutate(zip = as.character(zip)), by = c("zip", "year")
+  ) %>%
+  mutate(zori_real = zori * (cpi23 / cpi)) %>% 
+  select(year, zip, safmr_real23, costar_avg_rent_real, zori_real) %>% 
+  distinct() %>% 
+  group_by(year, zip) %>% 
+  summarise(
+    safmr_real23 = mean(safmr_real23, na.rm = TRUE),
+    costar_avg_rent_real = mean(costar_avg_rent_real, na.rm = TRUE),
+    zori_real = mean(zori_real, na.rm = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  pivot_longer(
+    cols = safmr_real23:ncol(.), 
+    names_to = "rent_type", 
+    values_to = "rent_value"
+  )
+```
+
+HUD SAFMRs tend to underestimate the estimated rent for a home compared to Zillow's estimate, but are relatively in line with CoStar estimates (although slightly lagged). Note that while Zillow's index contains rental units of all bedroom sizes, CoStar estimates and real SAFMR in the chart below are limited to 2-bedroom units. Zillow also has more expansive data on rental properties with less than 5 units than CoStar, and may be more representative of rental costs experienced by new movers. CoStar and Zillow estimates are also adjusted for inflation.
+
+The new methodology appears to have minimal impact on the trajectory of SAFMRs.
+
+```{r}
+safmr_join %>% 
+  mutate(
+    rent_type = 
+      fct_relevel(
+        rent_type, "zori_real", "costar_avg_rent_real", "safmr_real23"
+      )
+  ) %>% 
+  ggplot(aes(x = as.factor(year), y = rent_value, fill = rent_type)) +
+  geom_boxplot(alpha = .4, outlier.shape = NA) +
+  geom_line(
+    data = 
+      safmr_join %>% 
+      group_by(year, rent_type) %>% 
+      summarise(rent_value = median(rent_value, na.rm = TRUE)) %>% 
+      ungroup() %>% 
+      mutate(
+        rent_type = 
+          fct_relevel(
+            rent_type, "zori_real", "costar_avg_rent_real", "safmr_real23"
+          )
+        ),
+    aes(group = rent_type, color = rent_type),
+    size = 1.1, 
+    linetype = "dashed"
+  ) +
+  geom_text(
+    data = . %>% slice(1),
+    aes(x = 9, y = 250, label = "New Methodology"),
+    color = "red"
+  ) +
+  geom_vline(aes(xintercept = 11.5), color = "red", linetype = "dotted") +
+  coord_cartesian(ylim = c(-0, 5000)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_fill_discrete(
+    labels = c("Zillow ZORI", "CoStar Average Rent", "HUD SAFMR")
+  ) +
+  scale_color_discrete(
+    labels = c("Zillow ZORI", "CoStar Average Rent", "HUD SAFMR")
+  ) +
+  theme_bw() +
+  theme(legend.text = element_text(size = 8)) +
+  labs(
+    title = "Historic Trends in California Local Rents",
+    subtitle = "2-bedroom units, inflated to 2023 $",
+    fill = "Rent Estimate Type",
+    color = "Rent Estimate Type",
+    x = NULL,
+    y = "Estimated Rent (real)"  
+  )
+```
+
+```{r}
+safmr_join %>% 
+  pivot_wider(names_from = rent_type, values_from = rent_value) %>% 
+  mutate(
+    costardiff = costar_avg_rent_real - safmr_real23,
+    zoridiff = zori_real - safmr_real23
+  ) %>% 
+  select(year, zip, costardiff, zoridiff) %>% 
+  pivot_longer(
+    cols = costardiff:zoridiff, names_to = "difftype", values_to = "diffamt"
+  ) %>% 
+  filter(year != 2023) %>% 
+  ggplot(aes(x = as.factor(year), y = diffamt, fill = difftype)) +
+  geom_boxplot(alpha = .4, outlier.shape = NA) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed") +
+  coord_cartesian(ylim = c(-1500, 2000)) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_fill_discrete(
+    labels = c("CoStar", "Zillow"), 
+    guide = guide_legend(reverse = TRUE)
+  ) +
+  theme_bw() +
+  labs(
+    title = "Annual Difference b/w HUD SAFMRs and Private Sources",
+    subtitle = "2-bedroom units, 2023 $",
+    x = NULL,
+    y = "Rent Cost Difference (real)",
+    fill = "Private Source"
+  )
+```
+
+# Potential Impacts of Expanding Mandatory SAFMRs
+
+According to HUD: "Currently, there are 24 metropolitan areas where the use of SAFMRs is required in the administration of HCV. Additional public housing agencies (PHAs) have voluntarily adopted SAFMRs or are utilizing SAFMRs as exception payment standards to increase access to units for their voucher families." In California, mandatory metro areas include the Sacramento-Arden-Arcade-Roseville, CA HUD Metro FMR Area and the San Diego-Carlsbad-San Marcos, CA MSA.
+
+Per HUD's SAFMR Dashboard (<https://www.hud.gov/program_offices/public_indian_housing/programs/hcv/safmr>), there are 10 PHAs in California that are mandated to use SAFMRs and 4 PHAs that use SAFMRs as exception payment standards (EPS) in select ZIP Codes. HUD estimates 46,249 allocated HCV units are covered by mandatory SAFMR usage (the number of units located in SAFMRs used as EPS is unknown). There are 97 listed PHAs in the state, meaning about 14% of PHAs in California utilize SAFMRS to some degree and **10% of PHAs are mandated** to utilize them.
+
+Per HUD's Housing Choice Voucher dashboard, there are 354,471 allocated HCV units in California (see <https://www.hud.gov/program_offices/public_indian_housing/programs/hcv/dashboard>). This means that **at least 12% of allocated HCV units in California are mandated to use SAFMR standards**; this number is likely higher when considering SAFMRs used as EPS.
+
+```{r}
+# pha_list_clean <-
+#   pha_list %>% 
+#   rename_with(
+#     ~str_replace_all(., " ", "_") %>% 
+#       str_to_lower() %>% 
+#       str_remove_all("\\,")
+#   ) %>% 
+#   filter(!is.na(pha_code) & !str_detect(pha_code, "PHA Code")) %>% 
+#   select(-`...3`) %>% 
+#   separate(
+#     col = name_phone_fax_email,
+#     into = c("name", "phone", "fax", "email"),
+#     sep = "\n"
+#   ) %>% 
+#   mutate(
+#     name =
+#       str_to_title(name) %>% 
+#       str_replace("Hsg", "Housing") %>% 
+#       str_replace("Auth$", "Authority") %>%
+#       str_replace("Auth\\.", "Authority") %>% 
+#       str_replace("Cdc", "CDC") %>% 
+#       str_replace("Sf$", "San Francisco") %>% 
+#       str_replace_all("Of ", "of ") %>% 
+#       str_replace_all("The ", "the ") %>% 
+#       str_replace_all("$the ", "The ")
+#   )
+```
+
+## AB 653 (Reyes)
+
+Assembly Bill 653 (Reyes), the Federal Housing Voucher Acceleration Program, seeks to - among other things - require housing authorities that have low lease-up rates to "apply evidence-based tools to increase utilization (such as increasing the value of a voucher by using Small Area Fair Market Rents)." If a PHA's success rate is below 60% for two consecutive quarters, the bill would require the PHA to opt in to HUD's SAFMRs. Importantly, the bill would also require that the PHA maintain a "hold harmless" policy for any voucher holders living in an area with reduced payment standards (i.e., the SAFMR is less than the FMR).
+
+Bill analysis conducted for the Senate Housing Committee (<https://leginfo.legislature.ca.gov/faces/billAnalysisClient.xhtml?bill_id=202320240AB653#>) indicates that only 27% of PHAs nationally had success rates below 60%, the threshold that would be established in this bill to trigger mandatory adoption of SAFMRs. Currently, the California Association of Housing Authorities and the Housing Authority of the County of San Bernardino are opposed to provisions of the bill that require PHAs to report specified data to HCD due to associated costs and that it could "paint an incomplete portrait of the significant and varied challenges facing HCV customers."
+
+One of the major benefits that AB 653 advocates argue will accrue from mandatory SAFMR adoption is increased voucher success rates at under-performing PHAs. However, the SAFMR Demonstration Evaluation HUD authored in 2017 (see: <https://www.huduser.gov/portal/sites/default/files/pdf/SAFMR-Evaluation-Final-Report.pdf>) showed mixed evidence for impacts on PHA's voucher success rates through expanding SAFMRs. While the direct link between unit availability and voucher success rate is unknown, it seems likely that a wider pool of available affordable units would only help increase voucher success rates (although other factors may be more important).
+
+As PHA success rates are not readily available, it is unknown at this time how many PHAs in California would be impacted by the provisions of this bill. However, a methodology to estimate the potential impact of the bill is provided below:
+
+### Step 1. Identify the total number of net new units available under SAFMRs compared to FMRs in 2023.
+
+In their 2018 report, the NYU Furman Center developed a methodology to estimate the impact on net new available units "unlocked" by transitioning from FMRs to SAFMRs (see <https://furmancenter.org/research/publication/how-do-small-area-fmrs-affect-the-location-and-number-of-units-affordable-t>). This analysis has been modified and updated below to reflect FY 2023 FMR and SAFMR values, and is expanded to apply to all metro areas in California.
+
+The 2018 report found that the loss of available units in low rent areas was offest by the gain of available units in higher rent areas with the introduction of SAFMRs in the 24 mandatory areas. Specifically, they identified an increase of about 9% in the number of available units.
+
+```{r}
+zcta_afford_df <-
+  read_csv(
+    paste0(homedir, "/Furman Center Brief/results/zcta_afford_table.csv")
+  )
+metro_afford_df <-
+  read_csv(
+    paste0(homedir, "/Furman Center Brief/results/metro_afford_table.csv")
+  )
+rent_cat_df <-
+  read_csv(
+    paste0(homedir, "/Furman Center Brief/results/rent_category_table.csv")
+  )
+
+payment_standards <- 
+  read_rds(
+    paste0(
+      homedir, "/Furman Center Brief/data/derived_data/payment_standards.rds"
+    )
+  )
+```
+
+```{r}
+zcta_rent_cat <- 
+  payment_standards %>%
+  filter(bedrooms == "2") %>%
+  mutate(
+    rent_ratio = safmr_adj / fmr_adj,
+    rent_cat = case_when(
+      rent_ratio < 0.9              ~ "< 0.9",
+      between(rent_ratio, 0.9, 1.1) ~ "0.9-1.1",
+      rent_ratio > 1.1              ~ "> 1.1"
+    )
+  ) %>%
+  select(hud_area_code, zcta, fmr_adj, safmr_adj, rent_cat) %>% 
+  left_join(zcta_coverage, by = "zcta") %>% 
+  st_drop_geometry()
+```
+
+Similarly, based on 2023 FMRs and SAFMRs, if all metro area in California were mandated to utilize SAFMR rent standards there would be a 5.3% net increase in the number of available affordable units. However, some metro areas, like Vallejo-Fairfield, CA MSA, experience a decrease in available affordable units. On the other hand some metros experience a significant increase in available affordable units, like Bakersfield, CA MSA with an 18% increase. 
+
+These estimates do not account for PHAs that are already utilizing SAFMR payments standards. This also does not account for PHAs that may utilize up to 110% of the SAFMR standard, which is permitted automatically. It also does not account for the potential effects of a "hold harmless" policy, which would not reduce rent standards for voucher holders living in areas where the applicable SAFMR is below the FMR.
+
+```{r}
+metro_afford_df %>% 
+  select(-hud_area_code) %>% 
+  mutate(diff_afford_pct = diff_afford_pct / 100) %>% 
+  mutate(
+    across(.cols = contains("_pct"), ~scales::percent(., accuracy = .1))
+  ) %>% 
+  mutate(
+    across(.cols = contains("_units"), ~round(.) %>% scales::comma())
+  ) %>% 
+  rename(
+    " " = 1, `Total Rental Units` = 2, `Affordable Units (FMR)` = 3, 
+    `Affordable Units (SAFMR)` = 4, `Share of Units Affordable (FMR)` = 5,
+    `Share of Units Affordable (SAFMR)` = 6, 
+    `Absolute Difference (SAFMR - FMR)` = 7, 
+    `Percentage Change (SAFMR - FMR/FMR)` = 8
+  ) %>% 
+  DT::datatable(rownames = FALSE, filter = "top")
+  # knitr::kable("simple") %>% 
+  # kableExtra::column_spec(1:8, border_left = T, border_right = T) %>%
+  # kableExtra::kable_styling()
+```
+
+The figure below shows the aggregate change in the share of rental units in these groups of ZIP Codes that are affordable to voucher holders (or with rents below the FMR). Under metropolitanwide FMRs, over two thirds of units in low-rent ZIP Codes are affordable to voucher holders, while only 21 percent of those in high-rent ZIP Codes are affordable. Under SAFMRs, the share of units that are affordable increases greatly in high-rent ZIP Codes while dropping considerably in low-rent ZIP Codes and slightly in moderate-rent ZIP Codes, such that a similar share of units are affordable in all three groups of ZIP Codes. This is in line with the 2018 report findings.
+
+```{r}
+rent_cat_df %>%
+  mutate(
+    afford_pct = afford_pct/100,
+    rent_cat = fct_relevel(rent_cat, "< 0.9", "0.9-1.1", "> 1.1", "Total")
+  ) %>% 
+  ggplot(aes(rent_cat, afford_pct, fill = type)) +
+  geom_col(position = "dodge", color = "black") +
+  geom_text(
+    aes(
+      label = scales::percent(afford_pct, 1),     
+      vjust = -.5
+    ),
+    position = position_dodge(width = 0.9)
+  ) +
+  scale_y_continuous(
+    limits = c(0, .72),
+    breaks = seq(0, .8, .1),
+    labels = scales::percent_format()
+  ) +
+  scale_x_discrete(
+    labels = c("Low Rent", "Moderate Rent", "High Rent", "Total")
+  ) +
+  scale_fill_manual(values = c("white", "grey60")) +
+  theme_bw() +
+  labs(
+    title = 
+      "Share of Rental Units Below Small Area FMR and Metropolitan Area FMR",
+    y = "Share of all rental units",
+    x = "ZIP Code rent ratio categories",
+    fill = NULL
+  )
+```
+
+See the chart below for this breakdown by TCAC/HCD Opportunity Map region. The lowest share of affordable rental units in high-rent ZIP Codes is evident in both the Los Angeles and Orange County Regions, while the highest share is in the Central Coast region.
+
+```{r}
+zcta_rent_cat %>% 
+  left_join(zcta_afford_df %>% mutate(zcta = as.character(zcta))) %>% 
+  group_by(rent_cat, region) %>%
+  summarise_at(
+    vars(total_units, fmr_afford_units, safmr_afford_units),
+    sum, na.rm = TRUE
+  ) %>%
+  mutate(
+    fmr_afford_pct = fmr_afford_units / na_if(total_units, 0),
+    safmr_afford_pct = safmr_afford_units / na_if(total_units, 0),
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0)) * 100
+  ) %>% 
+  ungroup() %>% 
+  filter(total_units != 0) %>% 
+  select(region, rent_cat, safmr_afford_pct, fmr_afford_pct) %>% 
+  gather("type", "afford_pct", -c(rent_cat, region)) %>%
+  mutate(
+    type = str_extract(type, "^[a-z]*") %>% 
+      str_to_upper() %>% recode(SAFMR = "Small Area FMR"),
+    rent_cat = factor(rent_cat, levels = c("< 0.9", "0.9-1.1", "> 1.1", "Total")),
+    afford_pct = afford_pct * 100
+  ) %>% 
+  mutate(
+    afford_pct = afford_pct/100,
+    rent_cat = fct_relevel(rent_cat, "< 0.9", "0.9-1.1", "> 1.1", "Total")
+  ) %>% 
+  ggplot(aes(rent_cat, afford_pct, fill = type)) +
+  geom_col(position = "dodge", color = "black") +
+  geom_text(
+    aes(label = scales::percent(afford_pct, 1), vjust = -.5),
+    position = position_dodge(width = 0.9),
+    size = 3
+  ) +
+  facet_wrap(~region) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, .2),
+    labels = scales::percent_format()
+  ) +
+  scale_x_discrete(
+    labels = c("Low Rent", "Moderate Rent", "High Rent", "Total")
+  ) +
+  scale_fill_manual(values = c("white", "grey60")) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  ) +
+  labs(
+    title = 
+      "Share of Rental Units Below Small Area FMR and Metropolitan Area FMR",
+    y = "Share of all rental units",
+    x = "ZIP Code rent ratio categories",
+    fill = NULL
+  )
+```
+
+The net difference in available affordable units at the ZIP Code level will be used to create bill impact projections for AB 653 in the steps below.
+
+### Step 2. Identify PHAs that are likely to be impacted by AB 653.
+
+As real-time PHA success rate data is unavailable, this section identifies PHAs that are *likely* to trigger AB 653's 60% threshold requirement. While historic studies of PHA success rates are available at a national scale, these are typically limited in scope or rely on data that is too old to be meaningful for this analysis.
+
+However, a study published in 2023 for HUD by Ingrid Gould Ellen, Katherine O’Regan, and Sarah Strochak (see <https://www.huduser.gov/portal/publications/Using-HUD-Administrative-Data-to-Estimate-Success-Rates.html>) provides a methodology to estimate success rates at the PHA level using administrative data. While this administrative data is not readily available, the study did publish success rates for PHAs in 2018 and 2019.
+
+In this analysis, a California PHA is classified as likely to trigger AB 653 if its success rate was estimated to be below 60% in both 2018 and 2019.
+
+```{r}
+ca_hcv_success <-
+  hcv_success_rates %>% 
+  rename_with(
+    ~str_replace_all(., " ", "_") %>% 
+      str_to_lower() %>%
+      str_remove_all("\\(|\\)")
+  ) %>% 
+  filter(str_detect(pha_code, "^CA")) %>% 
+  select(pha_code, pha_name, year, success_rate = success_rate_180_day) %>% 
+  pivot_wider(
+    names_from = year, values_from = success_rate, 
+    names_prefix = "success_rate_"
+  ) %>% 
+  mutate(
+    bill_trigger = 
+      if_else(success_rate_2018 < .6 & success_rate_2019 < .6, 1, 0)
+  )
+```
+
+```{r}
+pha_list <-
+  pha_list %>% 
+  left_join(ca_hcv_success, by = "pha_code")
+```
+
+Out of California's 97 qualified PHAs, 24 (25%) would trigger the bill's provisions and 38 (39%) would not. The remaining 35 PHAs are unknown, as their success rate was not calculated in the 2023 study. For the purposes of this analysis, it is assumed that these 35 remaining PHAs would not trigger the bill's provisions. The 25% estimate of PHAs under 60% closely matches HUD's national study (mentioned above) that found 27% of PHAs had a success rate under 60%. The PHAs that are assumed to trigger AB 653 are listed below.
+
+```{r}
+pha_list %>% 
+  filter(bill_trigger == 1) %>%
+  select(`PHA Name` = pha_name, `Metro Area` = cbsa_nm) %>% 
+  DT::datatable(rownames = FALSE, filter = "top")
+```
+
+For reference, the median number of vouchers managed by PHAs included in the 2023 success rate study is 1,501, compared to 803 vouchers for the 35 PHAs not included in the 2023 success rate study. In other words, the 35 PHAs not included in the study are generally smaller. Note that the Housing Authority of the County of San Bernardino is not included in the 2023 success rate study (one of AB 653's opponents).
+
+```{r}
+# pha_list %>% 
+#   group_by(bill_trigger) %>% 
+#   tally() %>% 
+#   mutate(pct = n / sum(n))
+
+# pha_list %>% 
+#   filter(is.na(bill_trigger)) %>% 
+#   summarise(avg = median(pha_total_units))
+# 
+# pha_list %>% 
+#   summarise(avg = median(pha_total_units))
+# 
+# pha_list %>% 
+#   filter(is.na(bill_trigger)) %>%
+#   group_by(ha_combined_size_category) %>% 
+#   tally() %>% 
+#   mutate(pct = n / sum(n))
+```
+
+The 23 identified PHAs likely to trigger AB 653 (excluding the County of Sacramento Housing Authority, as it is already mandated to utilize SAFMR standards) are generally Standard Performers or High Performers according to HUD in 2023. None reach the top designation of "Advisory" or the lowest designations of "Substandard Physical" or "Troubled Performer".
+
+```{r}
+pha_list %>% 
+  filter(bill_trigger == 1) %>% 
+  filter(formal_participant_name != "County of Sacramento Housing Authority") %>% 
+  group_by(phas_designation) %>% 
+  tally() %>% 
+  mutate(
+    phas_designation = replace_na(phas_designation, "Not Available"),
+    phas_designation = 
+      fct_relevel(
+        phas_designation, "Substandard Financial", "Standard Performer",
+        "High Performer", "Not Available"),
+  ) %>% 
+  ggplot(aes(phas_designation, n)) + 
+  geom_col() +
+  scale_y_continuous(breaks = seq(0, 10, 2)) +
+  theme_bw() +
+  labs(
+    title = "Overall Performance of PHAs Likely to Trigger AB 653",
+    x = "HUD PHA Designation",
+    y = "# of PHAs"
+  )
+```
+
+Vouchers provided by PHAs likely to trigger AB 653 are mostly concentrated in the Los Angeles Region (61%), see below. There is also a sizable proportion of vouchers located in the Central Valley Region (17%). Compare to the Bay Area Region, which only includes 8% of vouchers likely to be impacted by the bill.
+
+```{r}
+pha_list %>% 
+  filter(bill_trigger == 1) %>% 
+  filter(formal_participant_name != "County of Sacramento Housing Authority") %>% 
+  select(county_level, pha_total_units) %>% 
+  left_join(
+    region_sf %>% st_drop_geometry(), by = c("county_level" = "county_code")
+  ) %>% 
+  group_by(region) %>% 
+  summarise(pha_total_units = sum(pha_total_units)) %>% 
+  ungroup() %>% 
+  mutate(pct = pha_total_units / sum(pha_total_units)) %>% 
+  ggplot(aes(x = fct_reorder(region, pha_total_units), y = pha_total_units)) +
+  geom_col() +
+  geom_text(
+    aes(label = scales::percent(pct, accuracy = .1)),
+    vjust = -1
+  ) +
+  scale_y_continuous(labels = scales::comma_format(), limits = c(0, 95000)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  labs(
+    title = "Regional Distribution of Vouchers Among PHAs Likely to Trigger AB 653",
+    x = NULL,
+    y = "Number of Vouchers"
+  )
+```
+
+### Step 3. Identify PHAs mandated to use SAFMRs and PHAs which opt-in to the standard (including as EPS).
+*For opt-in and EPS PHAs, identify the specific ZIP Codes covered by the SAFMR rent standard.*
+
+HUD's new SAFMR dashboard (<https://www.hud.gov/program_offices/public_indian_housing/programs/hcv/safmr>)
+identifies which PHAs are mandated to use the SAFMR standard, PHAs that opt-in to the standard, and PHAs that use SAFMRs as EPS in select ZIP Codes. However, the tool does not identify to specific ZIP Codes used as EPS.
+
+```{r}
+pha_safmr_list <-
+  pha_list %>% 
+  left_join(safmr_dashboard %>% select(-pha_name)) %>% 
+  mutate(safmr_type = replace_na(safmr_type, "None"))
+```
+
+As noted earlier, there are 14 PHAs in California which use the SAFMR standard to some degree - 10 are mandated to use SAFMRs while 4 use the SAFMR standard as EPS. One of the mandatory SAFMR PHAs is likely to trigger AB 653 provisions (County of Sacramento Housing Authority), while two of the SAFMR as EPS PHAs are likely to trigger the bill's provisions (Housing Authority of Fresno County	and Housing Authority of the City of Los Angeles). For ZIP Codes where these three PHAs apply the SAFMR standard, this will reduce total AB 653 impact projections in subsequent steps.
+
+```{r}
+# pha_safmr_list %>% 
+#   filter(safmr_type != "None") %>% 
+#   filter(bill_trigger == 1) %>% 
+#   select(pha_code, pha_name, safmr_type)
+```
+
+The Housing Authority of Fresno County applies SAFMR standards to 14 ZIP Codes in its jurisdiction, per their 2023 payment standards. These 14 ZIP Codes will be removed from total AB 653 impact projections below.
+
+```{r}
+fresno_safmr_zcta <-
+  fresno_pha_safmr %>% 
+  select(zcta = `ZIP CODE`) %>% 
+  filter(!is.na(zcta)) %>% 
+  pull()
+```
+
+The Housing Authority of the City of Los Angeles applies SAFMR standards to 133 ZIP Codes in its jurisdiction, per their 2023 payment standards. These 133 ZIP Codes will be removed from the total AB 653 impact projections below.
+
+```{r}
+hacla_safmr_zcta <-
+  hacla_pha_safmr %>% 
+  select(zcta = `Zip Code`) %>% 
+  filter(!is.na(zcta)) %>% 
+  mutate(rowid = row_number()) %>% 
+  pivot_wider(
+    names_from = "rowid", values_from = "zcta", names_prefix = "zcta_"
+  ) %>% 
+  mutate(
+    zcta_1 = paste0(zcta_1, "; "),
+    zcta_2 = paste0(zcta_2, "; "),
+    zcta_final = paste0(zcta_1, zcta_2, zcta_3)
+  ) %>% 
+  select(zcta_final) %>% 
+  separate_longer_delim(cols = zcta_final, delim = "; ") %>% 
+  pull()
+```
+
+```{r}
+exclude_safmr_zcta <- c(fresno_safmr_zcta, hacla_safmr_zcta)
+```
+
+### Step 4: Estimate AB 653's impact on available units.
+*From the net new available affordable units estimate, remove units covered by PHAs which do not trigger the bill's provisions (Step 2) and remove units covered by PHAs which already implement SAFMRs (Step 3).*
+
+```{r}
+## Find ZCTAs of likely PHAs
+pha_safmr_sf <-
+  pha_safmr_list %>% 
+  filter(bill_trigger == 1) %>% 
+  select(pha_code, pha_name) %>% 
+  # join with service boundary data
+  left_join(pha_service_area %>% select(pha_code = PARTICIPAN)) %>% 
+  st_as_sf() %>%
+  st_transform(crs = 2805) %>% 
+  st_make_valid()
+```
+
+```{r}
+## Join overlapping PHA service areas to create single geometry
+overlapping_phas <-
+  pha_safmr_sf %>% 
+  # filter to only internal PHAs
+  filter(str_detect(pha_name, "City|CITY|Pico|BERKELEY")) %>% 
+  filter(!str_detect(pha_name, "CRESCENT|Madera")) %>% 
+  st_intersection(pha_safmr_sf) %>% 
+  mutate(intersect_area = st_area(.) %>% as.double()) %>% 
+  filter(intersect_area > 13000 & pha_code != pha_code.1) %>% 
+  arrange(pha_code) %>%
+  st_drop_geometry() %>%
+  # remove duplicate geographies (LA, Solano)
+  filter(!(pha_code %in% c("CA004", "CA117", "CA118", "CA125"))) %>% 
+  left_join(pha_safmr_sf %>% select(pha_name.1 = pha_name)) %>% 
+  st_as_sf() %>% 
+  group_by(pha_code) %>% 
+  mutate(
+    geometry = st_union(geometry),
+    rowid = row_number()
+    #pha_code.1 = paste0(pha_code.1, " (", pha_name.1, ")")
+  ) %>% 
+  select(pha_code, pha_name, rowid, pha_code.1) %>% 
+  pivot_wider(
+    names_from = "rowid", values_from = "pha_code.1", names_prefix = "phajoin_"
+  ) %>% 
+  mutate(phajoin_2 = if_else(pha_code == "CA041", "CA125", phajoin_2))
+```
+
+```{r}
+# remove overlapping PHAs from final list
+pha_safmr_join <-
+  pha_safmr_sf %>% 
+  filter(!(pha_code %in% overlapping_phas$pha_code)) %>% 
+  filter(!(pha_code %in% overlapping_phas$phajoin_1)) %>% 
+  filter(!(pha_code %in% overlapping_phas$phajoin_2)) %>% 
+  filter(!(pha_code %in% overlapping_phas$phajoin_3)) %>% 
+  filter(!(pha_code %in% overlapping_phas$phajoin_4)) %>% 
+  mutate(
+    phajoin_1 = NA_character_,
+    phajoin_2 = NA_character_,
+    phajoin_3 = NA_character_,
+    phajoin_4 = NA_character_
+  ) %>% 
+  bind_rows(overlapping_phas) %>% 
+  left_join(
+    pha_safmr_sf %>% 
+      st_drop_geometry() %>% 
+      select(phajoin_1 = pha_code, phaname_1 = pha_name)
+  ) %>% 
+  left_join(
+    pha_safmr_sf %>% 
+      st_drop_geometry() %>% 
+      select(phajoin_2 = pha_code, phaname_2 = pha_name)
+  ) %>% 
+  left_join(
+    pha_safmr_sf %>% 
+      st_drop_geometry() %>% 
+      select(phajoin_3 = pha_code, phaname_3 = pha_name)
+  ) %>% 
+  left_join(
+    pha_safmr_sf %>% 
+      st_drop_geometry() %>% 
+      select(phajoin_4 = pha_code, phaname_4 = pha_name)
+  ) %>% 
+  mutate(
+    phajoin_1 = paste0(phajoin_1, " (", phaname_1, ")"),
+    phajoin_2 = paste0(phajoin_2, " (", phaname_2, ")"),
+    phajoin_3 = paste0(phajoin_3, " (", phaname_3, ")"),
+    phajoin_4 = paste0(phajoin_4, " (", phaname_4, ")"),
+    phajoin = 
+      paste(phajoin_1, phajoin_2, phajoin_3, phajoin_4, sep = ", ") %>% 
+      str_remove_all(", NA") %>% 
+      str_remove_all(" \\(NA\\)") %>% 
+      str_remove_all("NA")
+  ) %>% 
+  select(pha_code, pha_name, phajoin) 
+```
+
+```{r}
+# join ZCTAs with grouped PHA service areas
+
+## If ZCTAs overlap PHA boundaries, take the % of ZCTA area within and apply to
+## total unit count
+
+intersect_pct <- 
+  zcta_coverage %>% 
+  filter(str_detect(zcta, "^8|^9")) %>% 
+  st_transform(crs = st_crs(pha_safmr_join)) %>% 
+  st_intersection(pha_safmr_join) %>% 
+  mutate(intersect_area = st_area(.)) %>%    
+  st_drop_geometry() 
+
+# remove units covered by PHAs which already implement SAFMRs (Step 3)
+## only when the ZIP is in that service area (subtract area coverage from joint
+## PHA coverage): Fresno County, HACLA
+LAFresno_intersect_pct <- 
+  zcta_coverage %>% 
+  filter(zcta %in% exclude_safmr_zcta) %>% 
+  st_transform(crs = st_crs(pha_safmr_sf)) %>% 
+  st_intersection(
+    pha_safmr_sf %>% 
+    filter(pha_code %in% c("CA028", "CA004"))
+  ) %>% 
+  mutate(LAFresno_intersect_area = st_area(.)) %>%    
+  st_drop_geometry() %>% 
+  select(zcta, LAFresno_intersect_area)
+
+zcta_pha_coverage <-
+  zcta_coverage %>% 
+  filter(str_detect(zcta, "^8|^9")) %>% 
+  st_transform(crs = st_crs(pha_safmr_join)) %>% 
+  # Find the total area of each ZCTA
+  mutate(zcta_area = st_area(.)) %>% 
+  left_join(intersect_pct) %>% 
+  left_join(LAFresno_intersect_pct) %>% 
+  mutate(
+    LAFresno_intersect_area = 
+      LAFresno_intersect_area %>% as.double() %>% replace_na(0),
+    # remove covered zip areas from total land calculation
+    intersect_area_reduce = as.double(intersect_area) - LAFresno_intersect_area,
+    intersect_area_reduce = 
+      if_else(intersect_area_reduce < 0, 0, intersect_area_reduce),
+    coverage = intersect_area_reduce/as.double(zcta_area)
+  ) %>% 
+  filter(!is.na(pha_code)) %>% 
+  filter(!is.na(coverage) & coverage != 0) %>% 
+  # remove slivers
+  filter(coverage >= .01) %>% 
+  # remove mandatory PHA (sacramento)
+  filter(pha_code != "CA007")
+```
+
+```{r}
+# zcta_pha_coverage %>% 
+#   st_drop_geometry() %>% 
+#   filter(!is.na(coverage) & coverage != 0) %>% 
+#   select(intersect_area_reduce) %>% 
+#   pull() %>% 
+#   quantile(.05)
+```
+
+```{r}
+# zcta_pha_coverage %>% 
+#   st_drop_geometry() %>% 
+#   filter(!is.na(coverage) & coverage != 0) %>%
+#   filter(intersect_area_reduce > 4400) %>%  
+#   ggplot(aes(intersect_area_reduce)) +
+#   geom_histogram(bins = 50) +
+#   scale_x_continuous(limits = c(0, 50000))
+```
+
+
+```{r}
+# group original findings by zip code (some ZIPs are split across metro areas)
+zcta_group_df <-
+  zcta_afford_df %>% 
+  group_by(zcta) %>% 
+  summarise(
+    across(
+      .cols = c(total_units, fmr_afford_units, safmr_afford_units),
+      ~sum(., na.rm = TRUE)
+    )
+  ) %>% 
+  mutate(
+    fmr_afford_pct = fmr_afford_units / na_if(total_units, 0),
+    safmr_afford_pct = safmr_afford_units / na_if(total_units, 0),
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0)) * 100
+  ) %>% 
+  ungroup() 
+```
+
+```{r}
+# join ZCTA by PHA coverage with estimated net new available units by 
+# ZCTA from step 1, only apply to PHAs from step 2
+zcta_pha_join <-
+  zcta_pha_coverage %>% 
+  left_join(zcta_group_df %>% mutate(zcta = as.character(zcta))) %>% 
+  mutate(
+    diff_afford_units = replace_na(diff_afford_units, 0),
+    fmr_afford_units = replace_na(fmr_afford_units, 0),
+    safmr_afford_units = replace_na(safmr_afford_units, 0),
+    total_units = replace_na(total_units, 0),
+    
+    # weight by % of ZIP code area within a PHA's coverage area
+    diff_afford_units = diff_afford_units * coverage,
+    fmr_afford_units = fmr_afford_units * coverage,
+    safmr_afford_units = safmr_afford_units * coverage,
+    total_units = replace_na(total_units, 0),
+
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0))
+  ) %>% 
+  arrange(zcta) %>% 
+  select(
+    zcta, pha_code, pha_name, phajoin, total_units, diff_afford_units,
+    fmr_afford_units, safmr_afford_units, diff_afford_pct, coverage
+  ) %>% 
+  tibble() %>%
+  st_as_sf() %>% 
+  st_drop_geometry() %>% 
+  # remove units covered by PHAs which already implement SAFMRs (Step 3)
+  ## only when the ZIP is in that service area
+  # filter(
+  #   !(
+  #     zcta %in% exclude_safmr_zcta & 
+  #       pha_name %in% 
+  #       c("Housing Authority of the City of Baldwin Park", 
+  #         "Housing Authority City of Fresno")
+  #   )
+  # ) %>% 
+  mutate(
+    phajoin =
+      paste0(pha_code, " (", pha_name, "), ", phajoin) %>% str_remove("\\, $")
+  ) 
+```
+
+```{r}
+# create final dataframe for impact table
+pha_impact <-
+  zcta_pha_join %>% 
+  group_by(phajoin) %>% 
+  summarise(
+    zcta = paste0(zcta, collapse = "; "),
+    safmr_afford_units = sum(safmr_afford_units) %>% round(),
+    fmr_afford_units = sum(fmr_afford_units) %>% round(),
+    diff_afford_units = sum(diff_afford_units) %>% round()
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0))
+  ) %>% 
+  janitor::adorn_totals(name = "Total Net New Available Units") %>% 
+  mutate(
+    diff_afford_pct = 
+      if_else(
+        phajoin == "Total Net New Available Units",
+        diff_afford_units / fmr_afford_units,
+        diff_afford_pct
+      )
+  ) %>% 
+  slice(nrow(.), 1:n()-1) 
+```
+
+After accounting for PHAs that are unlikely to trigger the provisions of AB 653 and places where SAFMR standards are already mandatory or available, AB 653 is likely to **decrease** the number of available affordable units in the service areas of eligible PHAs. Specifically, we can expect to see a **2.4% decrease** in the number of available units (from 577,984 to 564,689), see the table below.
+
+```{r}
+pha_impact %>% 
+  mutate(
+    safmr_afford_units = scales::comma(safmr_afford_units),
+    fmr_afford_units = scales::comma(fmr_afford_units),
+    diff_afford_units = scales::comma(diff_afford_units),
+    diff_afford_pct = scales::percent(diff_afford_pct, accuracy = .1)
+  ) %>% 
+  select(
+    `PHA Groups` = phajoin,
+    `Affordable Units (SAFMR)` = 3, `Affordable Units (FMR)` = 4,
+    `Absolute Difference (SAFMR - FMR)` = 5, 
+    `Percentage Change (SAFMR - FMR/FMR)` = 6
+  ) %>% 
+  DT::datatable(rownames = FALSE, filter = "top")
+```
+
+While this analysis estimates a modest overall decrease in available units, a significant increase in the relative availability of units in high-rent ZIP Codes is likely, see below. Increased availability in high-rent ZIP Codes also varies by region: high cost regions like Los Angeles County and the Bay Area experience an increase in availability by 17 and 20 percentage points, respectively, while lower cost regions like the Central Valley and the Inland Empire experience much higher increases - 26 and 25 percentage points, respectively. Although it is not possible to determine whether overall voucher success rates will increase based on this analysis (see more in "Summary of AB 653's Potential Impact" below), such a large increase in unit availability in high-rent ZIP Codes would presumably translate to higher success rates in these areas, helping advance AFFH goals of reducing segregation and poverty concentration and increasing access to opportunity.
+
+```{r}
+zcta_pha_join %>% 
+  group_by(zcta) %>%
+  summarise(
+    fmr_afford_units = sum(fmr_afford_units) %>% round(),
+    safmr_afford_units = sum(safmr_afford_units) %>% round(),
+    total_units = sum(total_units) %>% round()
+  ) %>% 
+  mutate(
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = diff_afford_units / fmr_afford_units
+  ) %>% 
+  left_join(
+    zcta_rent_cat %>% 
+      select(zcta, rent_cat) %>% 
+      group_by(zcta) %>% 
+      slice(1) %>% 
+      ungroup() %>% 
+      st_drop_geometry()
+  ) %>% 
+  group_by(rent_cat) %>%
+  summarise_at(
+    vars(total_units, fmr_afford_units, safmr_afford_units),
+    sum, na.rm = TRUE
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    fmr_afford_pct = fmr_afford_units / na_if(total_units, 0),
+    safmr_afford_pct = safmr_afford_units / na_if(total_units, 0),
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0)) * 100
+  ) %>% 
+  filter(total_units != 0) %>% 
+  select(rent_cat, safmr_afford_pct, fmr_afford_pct) %>% 
+  gather("type", "afford_pct", -rent_cat) %>% 
+  mutate(
+    type = 
+      str_extract(type, "^[a-z]*") %>% 
+      str_to_upper() %>% recode(SAFMR = "Small Area FMR"),
+    rent_cat = factor(rent_cat, levels = c("< 0.9", "0.9-1.1", "> 1.1", "Total")),
+    afford_pct = afford_pct * 100
+  ) %>% 
+  mutate(
+    afford_pct = afford_pct/100,
+    rent_cat = fct_relevel(rent_cat, "< 0.9", "0.9-1.1", "> 1.1", "Total")
+  ) %>% 
+  ggplot(aes(rent_cat, afford_pct, fill = type)) +
+  geom_col(position = "dodge", color = "black") +
+  geom_text(
+    aes(label = scales::percent(afford_pct, 1), vjust = -.5),
+    position = position_dodge(width = 0.9)
+  ) +
+  scale_y_continuous(
+    limits = c(0, .7),
+    breaks = seq(0, .7, .1),
+    labels = scales::percent_format()
+  ) +
+  scale_x_discrete(
+    labels = c("Low Rent", "Moderate Rent", "High Rent", "Total")
+  ) +
+  scale_fill_manual(values = c("white", "grey60")) +
+  theme_bw() +
+  labs(
+    title = 
+      "Share of Rental Units Below Small Area FMR and Metropolitan Area FMR",
+    subtitle = 
+      "ZIP Codes in the Jurisdictions of PHAs Likely Impacted by AB 653",
+    y = "Share of all rental units",
+    x = "ZIP Code rent ratio categories",
+    fill = NULL
+  )
+```
+
+```{r}
+zcta_pha_join %>% 
+  group_by(zcta) %>%
+  summarise(
+    fmr_afford_units = sum(fmr_afford_units) %>% round(),
+    safmr_afford_units = sum(safmr_afford_units) %>% round(),
+    total_units = sum(total_units) %>% round()
+  ) %>% 
+  mutate(
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = diff_afford_units / fmr_afford_units
+  ) %>% 
+  left_join(
+    zcta_rent_cat %>% 
+      select(zcta, rent_cat, region) %>% 
+      group_by(zcta) %>% 
+      slice(1) %>% 
+      ungroup() %>% 
+      st_drop_geometry()
+  ) %>% 
+  group_by(rent_cat, region) %>% 
+  summarise_at(
+    vars(total_units, fmr_afford_units, safmr_afford_units),
+    sum, na.rm = TRUE
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    fmr_afford_pct = fmr_afford_units / na_if(total_units, 0),
+    safmr_afford_pct = safmr_afford_units / na_if(total_units, 0),
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0)) * 100
+  ) %>% 
+  filter(total_units != 0) %>% 
+  select(region, rent_cat, safmr_afford_pct, fmr_afford_pct) %>% 
+  gather("type", "afford_pct", -c(rent_cat, region)) %>% 
+  mutate(
+    type = 
+      str_extract(type, "^[a-z]*") %>% 
+      str_to_upper() %>% recode(SAFMR = "Small Area FMR"),
+    rent_cat = factor(rent_cat, levels = c("< 0.9", "0.9-1.1", "> 1.1", "Total")),
+    afford_pct = afford_pct * 100
+  ) %>% 
+  mutate(
+    afford_pct = afford_pct/100,
+    rent_cat = fct_relevel(rent_cat, "< 0.9", "0.9-1.1", "> 1.1", "Total")
+  ) %>% 
+  ggplot(aes(rent_cat, afford_pct, fill = type)) +
+  geom_col(position = "dodge", color = "black") +
+  geom_text(
+    aes(label = scales::percent(afford_pct, 1), vjust = -.5),
+    position = position_dodge(width = 0.9),
+    size = 3
+  ) +
+  facet_wrap(~region) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    breaks = seq(0, 1, .2),
+    labels = scales::percent_format()
+  ) +
+  scale_x_discrete(
+    labels = c("Low Rent", "Moderate Rent", "High Rent", "Total")
+  ) +
+  scale_fill_manual(values = c("white", "grey60")) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  ) +
+  labs(
+    title = 
+      "Share of Rental Units Below Small Area FMR and Metropolitan Area FMR",
+    subtitle = 
+      "ZIP Codes in the Jurisdictions of PHAs Likely Impacted by AB 653",
+    y = "Share of all rental units",
+    x = "ZIP Code rent ratio categories",
+    fill = NULL
+  )
+```
+
+### Summary of AB 653's Potential Impact
+
+In summary, the places where expanded SAFMR standards would most likely increase available housing options for voucher recipients already implement these standards in some form (particularly in the City of Los Angeles). While mandatory implementation of SAFMR standards in under-performing PHAs would likely not increase the overall availability of affordable housing, it is likely to increase the availability of housing in high-rent ZIP Codes. 
+
+Since evidence is mixed on whether expanded housing availability through SAFMRs has an impact on overall voucher success rates, it is unclear whether this component of AB 653 would, alone, result in higher lease-up rates across all neighborhood types even if the net number of available units were to increase. However, as described in the bill language, AB 653 would provide grant funds to PHAs to provide a range of additional supports to assist in voucher lease-ups including landlord incentives, housing navigation and mobility services, and paying for security deposits, among others. It is thus possible that SAFMR adoption could combine with this additional supports to not only increase access to high-cost areas but also increase overall voucher success rates, as the bill intends.
+
+Finally, note that the "hold harmless" provisions in the bill would help mitigate the impacts of decreasing rent standards for tenants living in areas where SAFMR standards are below the FMR. Mandatory implementation also does not account for metropolitan vacancy rates and their potential impact on the housing supply.
+
+See the interactive map below for a visualization of where ZIP Codes would experience increased availability of affordable rental units under the mandatory SAFMR standards of AB 653, and where they would experience decreased availability. Red outlines represent the combined service area of PHAs that would likely trigger the bill. The County of Sacramento Housing Authority is omitted as it is already mandated to utilize SAFMR standards.
+
+```{r}
+# Set up data for mapping by ZIP code
+join_zcta_pha_geo <-
+  zcta_pha_join %>% 
+  group_by(zcta) %>% 
+  summarise(
+    across(
+      .cols = c(fmr_afford_units, safmr_afford_units),
+      ~sum(., na.rm = TRUE)
+    )
+  ) %>% 
+  mutate(
+    diff_afford_units = safmr_afford_units - fmr_afford_units,
+    diff_afford_pct = (diff_afford_units / na_if(fmr_afford_units, 0))
+  ) %>% 
+  ungroup() %>% 
+  mutate(across(.cols = fmr_afford_units:diff_afford_units, ceiling)) %>% 
+  mutate(
+    diff_afford_pct = replace_na(diff_afford_pct, 0),
+    diff_afford_pct = 
+      if_else(
+        safmr_afford_units <= 1 & fmr_afford_units <= 1 |
+          diff_afford_units == 0, 0, diff_afford_pct
+      ),
+    #`Percentage Change (SAFMR - FMR/FMR)` = diff_afford_pct
+    #diff_afford_pct = scales::percent(diff_afford_pct, accuracy = .1)
+  ) %>% 
+  left_join(zcta_coverage) %>% 
+  mutate(
+    diff_afford_grp =
+      case_when(
+        diff_afford_pct <= -.25 ~ "25%-100% Decrease",
+        diff_afford_pct > -.25 & diff_afford_pct < 0 ~ "1%-24% Decrease",
+        diff_afford_pct == 0 ~ "No Change",
+        diff_afford_pct > 0 & diff_afford_pct < .25 ~ "1%-24% Increase",
+        diff_afford_pct >= .25 & diff_afford_pct < .5 ~ "25%-49% Increase",
+        diff_afford_pct >= .5 & diff_afford_pct < .75 ~ "50%-74% Increase",
+        diff_afford_pct >= .75 & diff_afford_pct < 1 ~ "75%-99% Increase",
+        diff_afford_pct >= 1 ~ "100% and Above Increase",
+        TRUE ~ NA_character_
+      ),
+    diff_afford_grp = fct_reorder(diff_afford_grp, desc(diff_afford_pct))
+  ) %>% 
+  st_as_sf()
+```
+
+```{r}
+#Create color palette with white as the center color
+#colorpal <- brewer.pal(11, "RdBu")
+colorpal <- 
+  rev(c("#67001F", "#B2182B", "#FFFFFF", "#D1E5F0", "#92C5DE", "#4393C3", "#2166AC",
+    "#053061"))
+
+#FFFFFF
+```
+
+```{r}
+# Set up map
+# Create color palette
+# mypal <-
+#   colorFactor(
+#     viridis::viridis_pal(option = "D", direction = -1)(2),
+#     domain = join_zcta_pha_geo$diff_afford_grp
+#   )
+mypal <-
+  colorFactor(
+    palette = colorpal,
+    domain = join_zcta_pha_geo$diff_afford_grp
+  )
+
+pha_safmr_map <-
+  pha_safmr_join %>%
+  mutate(
+    phajoin =
+      paste0(pha_code, " (", pha_name, "), ", phajoin) %>% str_remove("\\, $")
+  ) %>% 
+  filter(pha_code != "CA007") %>% 
+  st_as_sf() %>% 
+  st_transform(crs = st_crs(zcta_coverage))
+```
+
+```{r}
+# Create map
+leaflet(width = "100%") %>% 
+  addProviderTiles("OpenStreetMap") %>%
+  setView(lat = 38, lng = -120, zoom = 5.45) %>%
+  addPolygons(
+    data = join_zcta_pha_geo,
+    #stroke = TRUE,
+    color = "black",
+    weight = .5,
+    smoothFactor = .2,
+    fillOpacity = .6,
+    fillColor = ~mypal(join_zcta_pha_geo$diff_afford_grp),
+    popup = 
+      paste0(
+        "ZIP Code: ", join_zcta_pha_geo$zcta, "<br>",
+        
+        "Affordable Units (FMR): ", join_zcta_pha_geo$fmr_afford_units, "<br>",
+        
+        "Affordable Units (SAFMR): ", 
+        join_zcta_pha_geo$safmr_afford_units, "<br>",
+        
+        "Absolute Difference (SAFMR - FMR): ", 
+        join_zcta_pha_geo$diff_afford_units, "<br>",
+        
+        "Percentage Change (SAFMR - FMR/FMR): ", 
+        scales::percent(join_zcta_pha_geo$diff_afford_pct, accuracy = .1)
+      )
+  ) %>% 
+  addPolygons(
+    data = pha_safmr_map,
+    color = "red",
+    weight = 4,
+    fill = FALSE,
+    smoothFactor = 0.2,
+    #fillOpacity = 0.1,
+    # fillColor = "grey80",
+    popup = paste0("Grouped PHA Service Area: ", pha_safmr_map$phajoin)
+  ) %>% 
+  addLegend(
+    "bottomright", 
+    pal = mypal, 
+    values = join_zcta_pha_geo$diff_afford_grp,
+    title = "Percentage Change (SAFMR - FMR/FMR)",
+    #labFormat = labelFormat(prefix = "$"),
+    opacity = 1
+  ) %>% 
+  addLegend(
+    "bottomright", 
+    #pal = mypal, 
+    colors = "red",
+    labels = "PHA Service Areas (MSAs)",
+    #values = pha_safmr_map$phajoin,
+    #title = "PHA Service Areas (MSAs)",
+    opacity = 1
+  )
+```
