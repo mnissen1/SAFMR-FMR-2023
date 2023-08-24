@@ -454,7 +454,7 @@ fmr_ca_df %>%
 
 YOY changes fluctuate significantly across California's metro areas, see below (truncated to 2018-2023). For example, the San Francisco metro area saw a decrease in its real FMR between both 2021-2022 and 2022-2023, while other metros may have experienced a decrease during the first period but an increase during the second. The introduction of the new methodology does not appear to have any obvious impact on the pattern of YOY change.
 
-```{r, fig.height=6}
+```{r, fig.height=8, fig.width=12}
 fmr_ca_df %>% 
   filter(nbeds == "2") %>%
   group_by(fips2010) %>% 
@@ -488,7 +488,7 @@ fmr_ca_df %>%
       vjust = 0.5 - sign(yoy_pct)/2
     ),
     position = position_dodge(width = .9),
-    size = 2
+    size = 4
   ) +
   # ggrepel::geom_text_repel(
   #   aes(
@@ -516,9 +516,10 @@ fmr_ca_df %>%
   scale_fill_brewer(palette = "Set1", labels = ~ str_wrap(.x, width = 28)) +
   theme_bw() +
   theme(
+    text = element_text(size = 14),
     legend.position = "bottom", 
-    legend.justification = c(0,0), 
-    legend.text = element_text(size = 6)
+    legend.justification = c(0,0),
+    legend.text = element_text(size = 10)
   ) +
   guides(fill = guide_legend(nrow = 3, byrow = TRUE)) +
   labs(
@@ -1100,7 +1101,7 @@ safmr_df %>%
 
 YOY changes fluctuate significantly across California's most expensive ZIP Codes, see below (truncated to 2018-2023). For example, ZIP Code 94065 in the Bay Area saw a decrease in both the 2021-2022 and 2022-2023 periods, while ZIP Code 91709 in the Inland Empire saw a marked increase during both periods. The introduction of the new methodology does not appear to have any obvious impact on the pattern of YOY change.
 
-```{r}
+```{r, fig.height=8, fig.width=12}
 safmr_df %>% 
   filter(nbeds == "2") %>%
   select(year, zip, safmr_real23) %>% 
@@ -1140,7 +1141,7 @@ safmr_df %>%
       vjust = .5 - sign(yoy_pct)/2
     ),
     position = position_dodge(width = .9),
-    size = 2
+    size = 4
   ) +
   geom_text(
     data = . %>% slice(1),
@@ -1162,11 +1163,13 @@ safmr_df %>%
   scale_fill_brewer(palette = "Set1", labels = ~ str_wrap(.x, width = 24)) +
   theme_bw() +
   theme(
+    text = element_text(size = 14),
+    #axis.text = element_text(size = 10),
     legend.position = "bottom", 
-    legend.justification = c(0,0), 
-    legend.text = element_text(size = 8)
+    legend.justification = c(0,0)
+   # legend.text = element_text(size = 10)
   ) +
-  guides(fill = guide_legend(ncol = 2, byrow = FALSE)) +
+  guides(fill = guide_legend(ncol = 4, byrow = FALSE)) +
   labs(
     title = "% YOY Change in SAFMR",
     subtitle = "2-bedroom units, inflated to 2023 $",
